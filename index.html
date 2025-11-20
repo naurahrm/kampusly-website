@@ -1,0 +1,964 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sistem Rekomendasi Jurusan Kuliah</title>
+    <!-- Tailwind CSS CDN untuk styling responsif -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Font Inter -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@100..900&display=swap" rel="stylesheet">
+    <!-- Libraries untuk PDF generation -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <style>
+        /* Gaya kustom dan tema warna */
+        :root {
+            --color-primary: #3b82f6; /* Biru Tua (blue-500) */
+            --color-secondary: #93c5fd; /* Biru Muda (blue-300) */
+            --color-text: #1f2937; /* Abu-abu gelap (gray-800) */
+            --color-background: #f3f4f6; /* Abu-abu terang (gray-100) */
+        }
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: var(--color-background);
+            color: var(--color-text);
+        }
+        .container-box {
+            background-color: white;
+            box-shadow: 0 10px 25px -3px rgba(0, 0, 0, 0.1);
+            border-radius: 1rem;
+            padding: 1.5rem;
+            max-width: 90%;
+        }
+        /* Custom scrollbar for better look */
+        ::-webkit-scrollbar {
+            width: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: var(--color-background);
+        }
+        ::-webkit-scrollbar-thumb {
+            background: var(--color-secondary);
+            border-radius: 10px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: var(--color-primary);
+        }
+
+        /* Input Table Styling for better mobile view */
+        .score-table-wrapper {
+            overflow-x: auto;
+            border: 1px solid #e5e7eb;
+            border-radius: 0.5rem;
+        }
+        .score-table-wrapper table {
+            min-width: 800px; /* Ensure readability on desktop */
+            width: 100%;
+        }
+        .score-table-wrapper th, .score-table-wrapper td {
+            padding: 0.5rem 0.75rem;
+            white-space: nowrap;
+        }
+        /* Style untuk pesan error/feedback PDF */
+        #pdf-feedback {
+            transition: all 0.3s ease;
+        }
+    </style>
+</head>
+<body>
+    <div id="app" class="min-h-screen flex justify-center items-start pt-10 pb-10">
+        <div id="content" class="container-box w-full lg:w-3/4">
+            <!-- Konten akan dimuat di sini oleh JavaScript -->
+        </div>
+    </div>
+
+    <script>
+        // **********************************************
+        // DEFINISI KONSTANTA DAN VARIABEL GLOBAL
+        // **********************************************
+        const APP_ID = 'rekomendasi-jurusan-app';
+        let userData = {}; // Menyimpan data pengguna dan nilai
+        const contentDiv = document.getElementById('content');
+        
+        // Daftar Mata Pelajaran
+        const SUBJECTS = {
+            WAJIB: [
+                { id: 'agama', name: 'Pendidikan Agama & Budi Pekerti', required: true },
+                { id: 'ppkn', name: 'PPKn', required: true },
+                { id: 'bindo', name: 'Bahasa Indonesia', required: true },
+                { id: 'binggris', name: 'Bahasa Inggris', required: true },
+                { id: 'matwajib', name: 'Matematika Wajib', required: true },
+                { id: 'sejarah', name: 'Sejarah', required: true },
+                { id: 'pjok', name: 'PJOK', required: true },
+                { id: 'senibudaya', name: 'Seni Budaya', required: true },
+                { id: 'kewirausahaan', name: 'Prakarya & Kewirausahaan', required: true },
+                { id: 'informatika', name: 'Informatika', required: true },
+            ],
+            MIPA: [
+                { id: 'matminat', name: 'Matematika Peminatan', required: false },
+                { id: 'fisika', name: 'Fisika', required: false },
+                { id: 'kimia', name: 'Kimia', required: false },
+                { id: 'biologi', name: 'Biologi', required: false },
+            ],
+            IPS: [
+                { id: 'ekonomi', name: 'Ekonomi', required: false },
+                { id: 'sosiologi', name: 'Sosiologi', required: false },
+                { id: 'geografi', name: 'Geografi', required: false },
+		{ id: 'antropologi', name: 'Antropologi', required: false },
+            ],
+            BAHASA: [
+                { id: 'basasing', name: 'Bahasa Asing Pilihan', required: false },
+                { id: 'sastra', name: 'Sastra Indonesia', required: false },
+                { id: 'sastra', name: 'Sastra Inggris', required: false },
+            ],
+        };
+
+        // Pemetaan Mata Pelajaran ke Jurusan Rekomendasi (LOGIKA BARU)
+        // PRIORITAS DIBUAT SANGAT SPESIFIK BERDASARKAN KECENDERUNGAN MATA PELAJARAN
+        const RECOM_MAP = [
+            // KELOMPOK SAINTEK SPESIFIK
+            { id: 'matminat', major: 'Matematika Murni/Terapan/Aktuaria', category: 'Matematika/Logika',
+                recoms: [
+                    { name: 'Aktuaria/Statistika', reason: 'Fokus pada analisis risiko, model matematika, dan statistika dalam konteks bisnis/asuransi. Membutuhkan penalaran logis tertinggi.' },
+                    { name: 'Ilmu Komputer/Informatika', reason: 'Membutuhkan kemampuan logika, algoritma, dan numerik yang sangat kuat sebagai dasar pemrograman dan pemecahan masalah kompleks.' },
+                    { name: 'Matematika Murni/Pendidikan Matematika', reason: 'Cocok jika Anda suka mendalami konsep-konsep abstrak dan teori matematika.' }
+                ],
+                campus: { lokal: 'Kampus Teknik/MIPA terbaik di provinsi/kota terdekat.', nasional: 'ITB, UGM, UI, ITS, Telkom University.' }
+            },
+            { id: 'fisika', major: 'Teknik/Fisika Murni', category: 'Fisika/Rekayasa',
+                recoms: [
+                    { name: 'Teknik Elektro/Teknik Mesin/Teknik Penerbangan', reason: 'Penerapan prinsip-prinsip fisika (mekanika, kelistrikan, termodinamika) untuk desain dan rekayasa.' },
+                    { name: 'Fisika Murni/Geofisika/Astronom/Oseanografi', reason: 'Fokus pada riset fenomena alam, alam semesta, atau struktur bumi. Membutuhkan pemahaman matematis dan observasi.' },
+                    { name: 'Teknik Sipil', reason: 'Perhitungan struktural dan mekanika bahan yang sangat bergantung pada dasar-dasar fisika.' }
+                ],
+                campus: { lokal: 'Kampus Teknik/MIPA terbaik di provinsi/kota terdekat.', nasional: 'ITB, UI, ITS, UGM.' }
+            },
+            { id: 'kimia', major: 'Teknik Kimia/Farmasi/Kimia Murni', category: 'Kimia/Terapan',
+                recoms: [
+                    { name: 'Teknik Kimia/Teknik Pangan', reason: 'Fokus pada proses industri, rekayasa produk, dan transformasi bahan kimia pada skala besar.' },
+                    { name: 'Farmasi/Kesehatan Lingkungan', reason: 'Membutuhkan pemahaman mendalam tentang reaksi kimia, senyawa obat, dan dampaknya pada lingkungan.' },
+                    { name: 'Kimia Murni/Pendidikan Kimia', reason: 'Cocok jika Anda suka bereksperimen, meneliti struktur molekul, dan mengembangkan ilmu dasar kimia.' }
+                ],
+                campus: { lokal: 'Kampus dengan Fakultas Teknik/Sains terbaik di provinsi/kota terdekat.', nasional: 'ITB, UGM, UI, Unair.' }
+            },
+            { id: 'biologi', major: 'Kedokteran/Kesehatan/Bioteknologi', category: 'Biologi/Hayati',
+                recoms: [
+                    { name: 'Pendidikan Dokter/Kedokteran Gigi/Farmasi', reason: 'Membutuhkan pemahaman mendalam tentang Biologi, anatomi, dan fisiologi makhluk hidup.' },
+                    { name: 'Bioteknologi/Teknologi Hasil Pertanian', reason: 'Aplikasi proses biologi untuk inovasi produk (pangan, energi, obat-obatan).' },
+                    { name: 'Biologi Murni/Biologi Kelautan', reason: 'Fokus pada riset, taksonomi, dan konservasi makhluk hidup dan ekosistem.' }
+                ],
+                campus: { lokal: 'Kampus dengan Fakultas Kedokteran/Sains terbaik di provinsi/kota terdekat.', nasional: 'UI, UGM, Unair, IPB.' }
+            },
+
+            // KELOMPOK SOSHUM SPESIFIK
+            { id: 'ekonomi', major: 'Ekonomi/Bisnis/Akuntansi', category: 'Ekonomi/Bisnis',
+                recoms: [
+                    { name: 'Manajemen/Akuntansi/Ekonomi Pembangunan', reason: 'Membutuhkan pemahaman tentang pasar, keuangan, dan analisis data sosial-ekonomi.' },
+                    { name: 'Bisnis Digital/Kewirausahaan', reason: 'Menggabungkan analisis ekonomi dengan tren pasar modern dan pengembangan bisnis.' },
+                    { name: 'Statistika Terapan (Ekonomi)', reason: 'Aplikasi statistika untuk memprediksi tren pasar dan ekonomi makro/mikro.' }
+                ],
+                campus: { lokal: 'Kampus dengan Fakultas Ekonomi terbaik di provinsi/kota terdekat.', nasional: 'UI, UGM, UNAIR, UNPAD, ITB (SBM).' }
+            },
+            { id: 'sosiologi', major: 'Sosiologi/Hukum/Ilmu Politik', category: 'Sosial/Masyarakat',
+                recoms: [
+                    { name: 'Sosiologi/Antropologi', reason: 'Fokus pada struktur masyarakat, budaya, dan perilaku sosial. Cocok untuk analisis mendalam tentang isu-isu masyarakat.' },
+                    { name: 'Ilmu Hukum/Ilmu Politik', reason: 'Membutuhkan pemikiran kritis, pemahaman sistem sosial, dan kemampuan retorika dan argumentasi yang kuat.' },
+                    { name: 'Ilmu Komunikasi/Administrasi Publik', reason: 'Fokus pada interaksi sosial, kebijakan, dan pengelolaan organisasi/pemerintahan.' }
+                ],
+                campus: { lokal: 'Kampus dengan Fakultas FISIP/Hukum terbaik di provinsi/kota terdekat.', nasional: 'UI, UGM, Unair, Unpad.' }
+            },
+            { id: 'geografi', major: 'Geografi/Perencanaan Wilayah/Geodesi', category: 'Lingkungan/Tata Ruang',
+                recoms: [
+                    { name: 'Perencanaan Wilayah dan Kota (PWK)/Teknik Lingkungan', reason: 'Penerapan ilmu tata ruang, pemetaan, dan solusi masalah lingkungan berdasarkan analisis geografis.' },
+                    { name: 'Geodesi dan Geomatika/Geografi Murni', reason: 'Fokus pada pengumpulan, pemrosesan, dan analisis data spasial (pemetaan, satelit, GIS).' },
+                    { name: 'Arsitektur Lanskap', reason: 'Menggabungkan aspek estetika dengan fungsi lingkungan dan tata ruang.' }
+                ],
+                campus: { lokal: 'Kampus dengan Fakultas Teknik/Geografi terbaik di provinsi/kota terdekat.', nasional: 'UGM, ITB, UI, ITS.' }
+            },
+            
+            // KELOMPOK BAHASA/HUMANIORA SPESIFIK
+            { id: 'bindo', major: 'Sastra/Linguistik/Jurnalistik', category: 'Bahasa Indonesia/Komunikasi',
+                recoms: [
+                    { name: 'Sastra Indonesia/Linguistik', reason: 'Menunjukkan kemampuan tinggi dalam pemahaman tata bahasa, analisis teks, dan komunikasi formal.' },
+                    { name: 'Jurnalistik/Ilmu Komunikasi', reason: 'Aplikasi kemampuan menulis dan berbahasa yang efektif untuk media dan publikasi.' },
+                    { name: 'Ilmu Hukum (dengan fokus pada penulisan legal)', reason: 'Membutuhkan kemampuan berbahasa yang sangat presisi dan formal.' }
+                ],
+                campus: { lokal: 'Kampus dengan Fakultas Ilmu Budaya/FISIP terbaik di provinsi/kota terdekat.', nasional: 'UGM, UI, Unpad, UPI.' }
+            },
+            { id: 'binggris', major: 'Sastra Inggris/Hubungan Internasional', category: 'Bahasa Inggris/Global',
+                recoms: [
+                    { name: 'Sastra Inggris/Pendidikan Bahasa Inggris', reason: 'Kemampuan analisis sastra, linguistik, dan penguasaan bahasa yang mendalam.' },
+                    { name: 'Hubungan Internasional/Bisnis Internasional', reason: 'Membutuhkan keterampilan komunikasi global dan pemahaman konteks sosial-politik antarnegara.' },
+                    { name: 'Pariwisata/Perhotelan', reason: 'Aplikasi praktis kemampuan berbahasa Inggris untuk industri jasa.' }
+                ],
+                campus: { lokal: 'Kampus dengan Fakultas Ilmu Budaya/Hubungan Internasional terbaik.', nasional: 'UGM, UI, Unair, Unpad.' }
+            },
+            
+            // KELOMPOK UMUM DAN KREATIF (Biasanya Tie-Breaker)
+            { id: 'senibudaya', major: 'Desain/Seni/Arsitektur', category: 'Kreatif/Estetika',
+                recoms: [
+                    { name: 'Desain Komunikasi Visual (DKV)/Desain Interior', reason: 'Potensi kreativitas, estetika, dan kemampuan visual tinggi.' },
+                    { name: 'Arsitektur/Seni Rupa', reason: 'Menggabungkan logika, ruang, dan kreativitas visual.' },
+                    { name: 'Industri Kreatif/Perfilman', reason: 'Penerapan bakat seni dan budaya dalam industri hiburan dan media.' }
+                ],
+                campus: { lokal: 'Kampus dengan Fakultas Seni Rupa/Desain terbaik di provinsi/kota terdekat.', nasional: 'ITB, ISI, UGM, UI.' }
+            },
+            { id: 'kewirausahaan', major: 'Bisnis/Teknopreneurship', category: 'Vokasi/Bisnis',
+                recoms: [
+                    { name: 'Manajemen Bisnis/Kewirausahaan', reason: 'Minat kuat pada prakarya, inovasi, dan potensi pengembangan bisnis.' },
+                    { name: 'Teknologi Pangan/Pariwisata (Vokasi)', reason: 'Fokus pada keterampilan terapan dan siap kerja.' }
+                ],
+                campus: { lokal: 'Kampus Vokasi/Politeknik terbaik di provinsi/kota terdekat.', nasional: 'UGM (Sekolah Vokasi), IPB (Sekolah Bisnis).' }
+            },
+            // Default General (untuk mata pelajaran wajib seperti Sejarah, PPKn, PJOK, Agama, dll.)
+            { id: 'general', major: 'Pendidikan/Administrasi/Hukum Umum', category: 'General/Humaniora',
+                recoms: [
+                    { name: 'Ilmu Hukum/Administrasi Negara', reason: 'Kecenderungan yang kuat pada mata pelajaran Sejarah dan PPKn menunjukkan minat pada tata negara dan masyarakat.' },
+                    { name: 'Pendidikan (Umum)/Keguruan', reason: 'Dasar-dasar moral dan sosial yang kuat, cocok untuk bidang yang berinteraksi langsung dengan publik.' },
+                    { name: 'Kesehatan Masyarakat/Ilmu Keolahragaan', reason: 'Jika PJOK/Biologi juga tinggi, menunjukkan potensi di bidang kesehatan atau olahraga.' }
+                ],
+                campus: { lokal: 'Universitas Negeri dengan Fakultas Ilmu Sosial dan Pendidikan.', nasional: 'UGM, UI, UNJ, UPI.' }
+            },
+        ];
+
+        // **********************************************
+        // FUNGSI UTILITY
+        // **********************************************
+
+        /**
+         * @description Mengambil data dari localStorage atau inisialisasi jika tidak ada.
+         */
+        function loadData() {
+            const storedData = localStorage.getItem(APP_ID);
+            return storedData ? JSON.parse(storedData) : { personal: null, scores: {} };
+        }
+
+        /**
+         * @description Menyimpan data ke localStorage.
+         */
+        function saveData() {
+            localStorage.setItem(APP_ID, JSON.stringify(userData));
+        }
+
+        /**
+         * @description Menghapus semua data dari localStorage.
+         */
+        // function clearData() {
+        //     localStorage.removeItem(APP_ID);
+        //     userData = { personal: null, scores: {} };
+        // }
+
+        /**
+         * @description Menampilkan pesan error di form.
+         * @param {string} message Pesan yang akan ditampilkan.
+         * @param {string} targetId ID elemen untuk pesan error
+         * @param {string} type Tipe pesan (error, success)
+         */
+        function displayFeedback(message, targetId, type = 'error') {
+            let errorElement = document.getElementById(targetId);
+            const bgColor = type === 'error' ? 'bg-red-100 border-red-400 text-red-700' : 'bg-green-100 border-green-400 text-green-700';
+            const title = type === 'error' ? 'Perhatian:' : 'Informasi:';
+
+            if (!errorElement) {
+                errorElement = document.createElement('div');
+                errorElement.id = targetId;
+                errorElement.className = 'mt-4 p-3 border rounded-lg';
+                // Masukkan elemen feedback ke bawah tombol PDF di Page 3
+                if (targetId === 'pdf-feedback') {
+                    document.getElementById('content').querySelector('.container-box').appendChild(errorElement);
+                } else {
+                    contentDiv.prepend(errorElement);
+                }
+            }
+            errorElement.className = `mt-2 p-3 border rounded-lg ${bgColor}`;
+            errorElement.innerHTML = `<p class="font-bold">${title}</p><p>${message}</p>`;
+            errorElement.classList.remove('hidden');
+
+            // Sembunyikan otomatis jika bukan error permanen
+            if (type !== 'error') {
+                 setTimeout(() => {
+                    hideError(targetId);
+                }, 5000);
+            }
+        }
+
+        /**
+         * @description Menyembunyikan pesan error.
+         * @param {string} targetId ID elemen pesan error
+         */
+        function hideError(targetId) {
+            const errorElement = document.getElementById(targetId);
+            if (errorElement) {
+                errorElement.classList.add('hidden');
+            }
+        }
+
+        /**
+         * @description Menghitung rata-rata dari nilai-nilai yang valid (0-100).
+         * @param {Object} scores Objek nilai per semester.
+         * @returns {number | null} Rata-rata atau null jika tidak ada nilai valid.
+         */
+        function calculateAverage(scores) {
+            // [LOGIKA: PERHITUNGAN RATA-RATA SEMESTER]
+            let sum = 0;
+            let count = 0;
+            for (let i = 1; i <= 5; i++) {
+                const score = parseFloat(scores[`smt${i}`]);
+                // Hanya hitung jika nilai valid (0-100)
+                if (!isNaN(score) && score >= 0 && score <= 100) {
+                    sum += score;
+                    count++;
+                }
+            }
+            return count > 0 ? parseFloat((sum / count).toFixed(2)) : null;
+        }
+
+        // **********************************************
+        // RENDER HALAMAN 1: FORM DATA PRIBADI
+        // **********************************************
+
+        function renderPage1() {
+            hideError('error-page1');
+            const personal = userData.personal || {};
+
+            contentDiv.innerHTML = `
+                <h1 class="text-3xl font-bold mb-6 text-center text-gray-800">Selamat Datang di Sistem Rekomendasi Jurusan</h1>
+                <p class="text-center text-lg mb-8 text-gray-600">Mohon isi data diri Anda untuk memulai proses rekomendasi.</p>
+                
+                <div id="error-page1" class="hidden"></div>
+
+                <form id="personal-form" class="space-y-4">
+                    <!-- Nama Lengkap -->
+                    <label class="block">
+                        <span class="text-gray-700 font-medium">Nama Lengkap <span class="text-red-500">*</span></span>
+                        <input type="text" id="nama-lengkap" value="${personal.nama || ''}"
+                            class="mt-1 block w-full rounded-lg border-gray-300 shadow-sm focus:border-blue-500 focus:ring focus:ring-blue-200 focus:ring-opacity-50 p-3"
+                            placeholder="Contoh: Budi Santoso">
+                    </label>
+
+                    <!-- Tempat & Tanggal Lahir -->
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <label class="block">
+                            <span class="text-gray-700 font-medium">Tempat Lahir <span class="text-red-500">*</span></span>
+                            <input type="text" id="tempat-lahir" value="${personal.tempatLahir || ''}"
+                                class="mt-1 block w-full rounded-lg border-gray-300 shadow-sm focus:border-blue-500 focus:ring focus:ring-blue-200 focus:ring-opacity-50 p-3"
+                                placeholder="Contoh: Jakarta">
+                        </label>
+                        <label class="block">
+                            <span class="text-gray-700 font-medium">Tanggal Lahir <span class="text-red-500">*</span></span>
+                            <input type="date" id="tanggal-lahir" value="${personal.tanggalLahir || ''}"
+                                class="mt-1 block w-full rounded-lg border-gray-300 shadow-sm focus:border-blue-500 focus:ring focus:ring-blue-200 focus:ring-opacity-50 p-3">
+                        </label>
+                    </div>
+
+                    <!-- Asal Sekolah -->
+                    <label class="block">
+                        <span class="text-gray-700 font-medium">Asal Sekolah <span class="text-red-500">*</span></span>
+                        <input type="text" id="asal-sekolah" value="${personal.asalSekolah || ''}"
+                            class="mt-1 block w-full rounded-lg border-gray-300 shadow-sm focus:border-blue-500 focus:ring focus:ring-blue-200 focus:ring-opacity-50 p-3"
+                            placeholder="Contoh: SMA Negeri 1 Jakarta">
+                    </label>
+                    
+                    <!-- Opsi Kampus -->
+                    <label class="block pt-4">
+                        <span class="text-gray-700 font-medium">Prioritas Kampus Rekomendasi</span>
+                        <select id="prioritas-kampus" class="mt-1 block w-full rounded-lg border-gray-300 shadow-sm focus:border-blue-500 focus:ring focus:ring-blue-200 focus:ring-opacity-50 p-3">
+                            <option value="nasional" ${personal.prioritasKampus === 'nasional' ? 'selected' : ''}>Nasional Unggulan (Berdasarkan Skor)</option>
+                            <option value="lokal" ${personal.prioritasKampus === 'lokal' ? 'selected' : ''}>Lokal/Domisili (Kampus di sekitar)</option>
+                        </select>
+                    </label>
+
+                    <button type="submit"
+                        class="w-full bg-blue-500 hover:bg-blue-600 text-white font-bold py-3 px-4 rounded-lg transition duration-200 ease-in-out shadow-lg transform hover:scale-[1.01]">
+                        Mulai Input Nilai
+                    </button>
+                </form>
+            `;
+
+            document.getElementById('personal-form').addEventListener('submit', handlePage1Submit);
+        }
+
+        /**
+         * @description Validasi dan simpan data pribadi. Pindah ke Halaman 2.
+         */
+        function handlePage1Submit(event) {
+            event.preventDefault();
+            
+            const nama = document.getElementById('nama-lengkap').value.trim();
+            const tempatLahir = document.getElementById('tempat-lahir').value.trim();
+            const tanggalLahir = document.getElementById('tanggal-lahir').value.trim();
+            const asalSekolah = document.getElementById('asal-sekolah').value.trim();
+            const prioritasKampus = document.getElementById('prioritas-kampus').value;
+
+            if (!nama || !tempatLahir || !tanggalLahir || !asalSekolah) {
+                displayFeedback('Semua field data diri (Nama, TTL, Asal Sekolah) wajib diisi.', 'error-page1', 'error');
+                return;
+            }
+
+            // Dapatkan nama depan
+            const firstName = nama.split(' ')[0];
+
+            userData.personal = {
+                nama,
+                firstName,
+                tempatLahir,
+                tanggalLahir,
+                asalSekolah,
+                prioritasKampus
+            };
+            saveData();
+            renderPage2();
+        }
+
+        // **********************************************
+        // RENDER HALAMAN 2: INPUT NILAI
+        // **********************************************
+
+        /**
+         * @description Membangun struktur tabel input nilai.
+         * @param {string} title Judul tabel (c.th., "Mata Pelajaran Wajib").
+         * @param {Array<Object>} subjects Daftar mata pelajaran.
+         * @param {boolean} isRequired Apakah ini mata pelajaran wajib.
+         * @returns {string} HTML untuk tabel.
+         */
+        function createScoreTable(title, subjects, isRequired) {
+            const currentScores = userData.scores || {};
+            
+            const rows = subjects.map((subj, index) => {
+                const subjScores = currentScores[subj.id] || {};
+                const isMandatory = subj.required;
+                const asterisk = isMandatory ? '<span class="text-red-500">*</span>' : '';
+                const validationClass = isMandatory ? 'required-subject' : 'optional-subject';
+
+                return `
+                    <tr class="hover:bg-gray-50 border-t border-gray-200" data-subject-id="${subj.id}" data-required="${isMandatory}">
+                        <td class="text-center">${index + 1}</td>
+                        <td class="font-medium">${subj.name} ${asterisk}</td>
+                        ${[1, 2, 3, 4, 5].map(smt => `
+                            <td>
+                                <input type="number" min="0" max="100" data-subject-id="${subj.id}" data-semester="${smt}" value="${subjScores[`smt${smt}`] || ''}"
+                                    class="w-full text-center p-1 border rounded-md score-input ${validationClass} focus:border-blue-500 focus:ring-blue-500/50"
+                                    placeholder="0-100">
+                            </td>
+                        `).join('')}
+                        <td class="text-center font-bold text-blue-700" id="avg-${subj.id}">
+                            ${subjScores.average !== undefined && subjScores.average !== null ? subjScores.average : '-'}
+                        </td>
+                    </tr>
+                `;
+            }).join('');
+
+            const header = `
+                <tr class="bg-blue-500 text-white sticky top-0">
+                    <th class="rounded-tl-lg">No</th>
+                    <th>Mata Pelajaran</th>
+                    <th>Smt 1</th>
+                    <th>Smt 2</th>
+                    <th>Smt 3</th>
+                    <th>Smt 4</th>
+                    <th>Smt 5</th>
+                    <th class="rounded-tr-lg">Rata-rata</th>
+                </tr>
+            `;
+
+            return `
+                <div class="mb-8">
+                    <h3 class="text-xl font-semibold mb-3 text-blue-600">${title}</h3>
+                    <div class="score-table-wrapper">
+                        <table class="bg-white text-sm shadow-md rounded-lg">
+                            <thead>${header}</thead>
+                            <tbody>${rows}</tbody>
+                        </table>
+                    </div>
+                    ${!isRequired ? '<p class="text-xs text-gray-500 mt-2">*Mata pelajaran pilihan boleh dikosongkan jika Anda tidak mengambilnya.</p>' : ''}
+                </div>
+            `;
+        }
+
+        function renderPage2() {
+            hideError('error-page2');
+            const firstName = userData.personal.firstName;
+
+            contentDiv.innerHTML = `
+                <h1 class="text-4xl font-extrabold mb-2 text-center text-blue-700">Halo, ${firstName}</h1>
+                <p class="text-center text-lg mb-8 text-gray-700">Saatnya input nilai rapor semester 1-5 Anda. <span class="text-red-500 font-bold">*Wajib diisi</span> untuk Mata Pelajaran Wajib.</p>
+                
+                <div id="error-page2" class="hidden"></div>
+                
+                <div id="score-tables">
+                    ${createScoreTable('1. Mata Pelajaran Wajib (Semua Wajib Diisi)', SUBJECTS.WAJIB, true)}
+                    ${createScoreTable('2. Mata Pelajaran Pilihan (MIPA)', SUBJECTS.MIPA, false)}
+                    ${createScoreTable('3. Mata Pelajaran Pilihan (IPS)', SUBJECTS.IPS, false)}
+                    ${createScoreTable('4. Mata Pelajaran Pilihan (Bahasa)', SUBJECTS.BAHASA, false)}
+                </div>
+
+                <div class="mt-8 flex justify-between gap-4">
+                    <button id="back-to-p1"
+                        class="w-1/3 bg-gray-400 hover:bg-gray-500 text-white font-bold py-3 px-4 rounded-lg transition duration-200 ease-in-out shadow-lg">
+                        Kembali (Ulangi Data Diri)
+                    </button>
+                    <button id="process-recommendation"
+                        class="w-2/3 bg-blue-500 hover:bg-blue-600 text-white font-bold py-3 px-4 rounded-lg transition duration-200 ease-in-out shadow-lg transform hover:scale-[1.01]">
+                        Proses Rekomendasi
+                    </button>
+                </div>
+            `;
+            
+            // Tambahkan event listener untuk input nilai
+            document.querySelectorAll('.score-input').forEach(input => {
+                input.addEventListener('input', handleScoreInput);
+            });
+
+            document.getElementById('process-recommendation').addEventListener('click', handlePage2Submit);
+            document.getElementById('back-to-p1').addEventListener('click', () => {
+                userData.scores = collectScores(); // Simpan data nilai sementara
+                saveData();
+                renderPage1();
+            });
+        }
+
+        /**
+         * @description Mengumpulkan nilai dari form dan menyimpannya di userData.scores
+         * @returns {Object} Objek skor yang dikumpulkan.
+         */
+        function collectScores() {
+            const scores = {};
+            document.querySelectorAll('.score-input').forEach(input => {
+                const subjectId = input.dataset.subjectId;
+                const semester = input.dataset.semester;
+                const value = input.value.trim();
+
+                if (!scores[subjectId]) {
+                    scores[subjectId] = {};
+                }
+                
+                // Simpan hanya nilai yang valid (numerik 0-100) atau string kosong jika dikosongkan
+                let scoreValue = value === '' ? '' : parseFloat(value);
+                
+                // Validasi range 0-100
+                if (scoreValue !== '' && (isNaN(scoreValue) || scoreValue < 0 || scoreValue > 100)) {
+                    // Biarkan validasi error terjadi pada submit, tapi simpan data input mentah
+                    scores[subjectId][`smt${semester}`] = value;
+                } else {
+                    scores[subjectId][`smt${semester}`] = scoreValue;
+                }
+            });
+            
+            // Hitung rata-rata setiap mata pelajaran yang dikumpulkan
+            for (const subjId in scores) {
+                scores[subjId].average = calculateAverage(scores[subjId]);
+            }
+            
+            return scores;
+        }
+
+        /**
+         * @description Menghitung rata-rata secara real-time saat input berubah.
+         */
+        function handleScoreInput(event) {
+            const input = event.target;
+            const subjectId = input.dataset.subjectId;
+            // const semester = input.dataset.semester; // Tidak digunakan di sini
+            
+            // Simpan sementara data
+            const currentScores = collectScores();
+            userData.scores = currentScores;
+            
+            // Update tampilan rata-rata
+            const avg = currentScores[subjectId]?.average;
+            const avgElement = document.getElementById(`avg-${subjectId}`);
+            if (avgElement) {
+                avgElement.textContent = avg !== undefined && avg !== null ? avg : '-';
+            }
+        }
+
+        /**
+         * @description Validasi input nilai, hitung rata-rata akhir, dan tentukan rekomendasi.
+         */
+        function handlePage2Submit() {
+            hideError('error-page2');
+            const scores = collectScores();
+            let hasError = false;
+            let errorMessage = [];
+
+            // 1. Validasi Mata Pelajaran Wajib dan Range 0-100
+            const allSubjects = [...SUBJECTS.WAJIB, ...SUBJECTS.MIPA, ...SUBJECTS.IPS, ...SUBJECTS.BAHASA];
+
+            allSubjects.forEach(subj => {
+                const subjScores = scores[subj.id];
+                if (!subjScores) return;
+
+                let isAllRequiredFilled = true;
+                
+                for (let i = 1; i <= 5; i++) {
+                    const value = subjScores[`smt${i}`];
+                    const isFilled = value !== '' && value !== null && value !== undefined;
+
+                    // Validasi Range 0-100
+                    if (value !== '' && (isNaN(value) || value < 0 || value > 100)) {
+                        hasError = true;
+                        errorMessage.push(`Nilai ${subj.name} semester ${i} harus dalam rentang 0-100.`);
+                    }
+
+                    // Validasi Wajib Diisi (Hanya untuk mata pelajaran WAJIB)
+                    if (subj.required && !isFilled) {
+                        isAllRequiredFilled = false;
+                    }
+                }
+                
+                if (subj.required && !isAllRequiredFilled) {
+                    // Cek juga apakah rata-ratanya null, yang berarti tidak ada nilai sama sekali
+                    if (subjScores.average === null) {
+                        hasError = true;
+                        errorMessage.push(`Mata pelajaran Wajib (${subj.name}) harus memiliki nilai di SEMUA semester yang berlaku (Smt 1-5).`);
+                    }
+                }
+            });
+
+            if (hasError) {
+                displayFeedback(`Mohon perbaiki kesalahan berikut:<ul class="list-disc list-inside mt-1">${[...new Set(errorMessage)].map(msg => `<li>${msg}</li>`).join('')}</ul>`, 'error-page2', 'error');
+                return;
+            }
+
+            // [LOGIKA: PENENTUAN MATA PELAJARAN TERBAIK - DIPERBAIKI]
+            let bestSubject = { id: null, name: null, average: -1, category: null };
+            let allAvgScores = [];
+            
+            // 2. Kumpulkan semua rata-rata
+            Object.keys(SUBJECTS).forEach(categoryKey => {
+                SUBJECTS[categoryKey].forEach(subj => {
+                    const avg = scores[subj.id]?.average;
+                    if (avg !== null) { // Hanya hitung mata pelajaran yang terisi
+                        allAvgScores.push({
+                            id: subj.id,
+                            name: subj.name,
+                            average: avg,
+                            category: categoryKey
+                        });
+                    }
+                });
+            });
+
+            // 3. Cari nilai tertinggi (dan penanganan tie/seri dengan prioritas Pilihan > Wajib)
+            allAvgScores.forEach(subj => {
+                if (subj.average > bestSubject.average) {
+                    bestSubject = subj; // Ganti jika lebih tinggi
+                } else if (subj.average === bestSubject.average && bestSubject.average !== -1) {
+                    // [LOGIKA: PENANGANAN TIE-BREAKER/SERI]
+                    const isCurrentPilihan = !SUBJECTS.WAJIB.some(w => w.id === subj.id);
+                    const isBestPilihan = !SUBJECTS.WAJIB.some(w => w.id === bestSubject.id);
+
+                    if (isCurrentPilihan && !isBestPilihan) {
+                        // Current Pilihan menang lawan Best Wajib
+                        bestSubject = subj;
+                    } else if (isCurrentPilihan && isBestPilihan) {
+                        // Keduanya Pilihan, gunakan prioritas RECOM_MAP (yang sudah diurutkan logis)
+                        // Kita ambil yang index-nya lebih dulu di RECOM_MAP
+                        const subjRank = RECOM_MAP.findIndex(r => r.id === subj.id);
+                        const bestRank = RECOM_MAP.findIndex(r => r.id === bestSubject.id);
+
+                        if (subjRank !== -1 && (bestRank === -1 || subjRank < bestRank)) {
+                            bestSubject = subj;
+                        }
+                    }
+                    // Jika keduanya Wajib atau Best adalah Pilihan, biarkan bestSubject tetap.
+                }
+            });
+            
+            if (bestSubject.average === -1) {
+                // Kasus jika tidak ada satupun nilai yang diisi
+                displayFeedback('Mohon isi setidaknya satu nilai mata pelajaran (minimal satu semester) untuk dapat diproses rekomendasinya.', 'error-page2', 'error');
+                return;
+            }
+
+
+            // 4. Generate Rekomendasi
+            const recommendation = generateRecommendation(bestSubject);
+
+            // Simpan semua hasil ke userData
+            userData.scores = scores;
+            userData.results = {
+                bestSubject,
+                allAvgScores,
+                recommendation
+            };
+            saveData();
+            renderPage3();
+        }
+
+
+        /**
+         * @description Menghasilkan daftar rekomendasi jurusan, kampus, dan alasan berdasarkan mata pelajaran terbaik.
+         * @param {Object} bestSubject Objek mata pelajaran terbaik.
+         * @returns {Object} Data rekomendasi lengkap.
+         */
+        function generateRecommendation(bestSubject) {
+            // [LOGIKA: PEMETAAN MATA PELAJARAN KE JURUSAN]
+            let mapEntry = RECOM_MAP.find(entry => entry.id === bestSubject.id);
+
+            // Jika mata pelajaran pilihan tidak ditemukan (e.g., mata pelajaran wajib yang menang)
+            if (!mapEntry) {
+                 // Cari di grup general jika mata pelajaran wajib yang tertinggi
+                mapEntry = RECOM_MAP.find(entry => entry.id === 'general');
+                // Khusus untuk Mat. Wajib, kita bisa gunakan Mat. Minat sebagai fallback logis
+                if (bestSubject.id === 'matwajib') {
+                    mapEntry = RECOM_MAP.find(entry => entry.id === 'matminat');
+                } else if (bestSubject.id === 'informatika') {
+                    // Khusus Informatika, pakai rekomendasi Ilmu Komputer/Teknik
+                    mapEntry = RECOM_MAP.find(entry => entry.id === 'matminat');
+                    mapEntry.recoms = [
+                        { name: 'Ilmu Komputer/Informatika', reason: 'Nilai Informatika yang tinggi adalah indikasi kuat bakat pada pemrograman, algoritma, dan logika komputasi.' },
+                        ...mapEntry.recoms.filter(r => r.name !== 'Ilmu Komputer/Informatika')
+                    ];
+                }
+                
+                // Jika masih tidak ditemukan, pakai general default
+                if (!mapEntry) {
+                     mapEntry = RECOM_MAP.find(entry => entry.id === 'general');
+                }
+            }
+
+
+            const prioritasKampus = userData.personal.prioritasKampus;
+
+            if (!mapEntry) {
+                 // Fallback teraman
+                return {
+                    recoms: [{ name: 'Pendidikan Umum/Administrasi', reason: 'Rekomendasi umum karena sistem tidak dapat mengklasifikasikan mata pelajaran terbaik secara spesifik.' }],
+                    campus: {
+                        type: 'Tidak Spesifik',
+                        list: ['Universitas terdekat', 'Universitas Nasional (UI, UGM)']
+                    }
+                };
+            }
+
+            const campusRec = prioritasKampus === 'lokal' ? mapEntry.campus.lokal : mapEntry.campus.nasional;
+
+            return {
+                recoms: mapEntry.recoms,
+                campus: {
+                    type: prioritasKampus === 'lokal' ? 'Lokal/Domisili' : 'Nasional Unggulan',
+                    list: campusRec
+                }
+            };
+        }
+
+
+        // **********************************************
+        // RENDER HALAMAN 3: HASIL REKOMENDASI
+        // **********************************************
+
+        function renderPage3() {
+            if (!userData.results) {
+                // Kembali ke halaman input jika data hasil tidak ada
+                renderPage1();
+                return;
+            }
+
+            const { personal } = userData;
+            const { bestSubject, allAvgScores, recommendation } = userData.results;
+            
+            // Siapkan ringkasan rata-rata
+            const avgTableRows = allAvgScores
+                .sort((a, b) => b.average - a.average)
+                .map(subj => {
+                    const isBest = subj.id === bestSubject.id;
+                    const subjectName = SUBJECTS.WAJIB.find(s => s.id === subj.id)?.name ||
+                                        SUBJECTS.MIPA.find(s => s.id === subj.id)?.name ||
+                                        SUBJECTS.IPS.find(s => s.id === subj.id)?.name ||
+                                        SUBJECTS.BAHASA.find(s => s.id === subj.id)?.name;
+
+                    return `
+                        <tr class="border-t border-gray-200 ${isBest ? 'bg-yellow-100 font-bold' : 'hover:bg-gray-50'}">
+                            <td class="px-4 py-2">${subjectName || subj.name}</td>
+                            <td class="px-4 py-2 text-center">${subj.average}</td>
+                        </tr>
+                    `;
+                }).join('');
+
+            // Siapkan daftar rekomendasi
+            const recomList = recommendation.recoms.map((recom, index) => `
+                <div class="p-4 border border-blue-200 rounded-lg mb-4 bg-white shadow-md">
+                    <h4 class="text-xl font-bold text-blue-700 mb-2">${index + 1}. ${recom.name}</h4>
+                    <p class="text-sm text-gray-600 font-medium">Alasan Cocok:</p>
+                    <p class="text-base">${recom.reason}</p>
+                </div>
+            `).join('');
+
+
+            contentDiv.innerHTML = `
+                <div id="pdf-export-content">
+                    <h1 class="text-4xl font-extrabold mb-2 text-center text-blue-700">Hasil Rekomendasi Jurusan Anda</h1>
+                    <p class="text-center text-lg mb-10 text-gray-700">Simpulan ini didasarkan pada perhitungan rata-rata nilai rapor Smt 1-5 Anda.</p>
+
+                    <!-- Ringkasan Data Pengguna -->
+                    <div class="bg-blue-50 border border-blue-200 p-6 rounded-xl mb-8 shadow-inner">
+                        <h3 class="text-2xl font-bold text-blue-800 mb-4">Ringkasan Data Pribadi</h3>
+                        <div class="grid grid-cols-2 gap-y-2 gap-x-4 text-gray-700">
+                            <p><strong>Nama:</strong></p><p>${personal.nama}</p>
+                            <p><strong>Tempat/Tgl Lahir:</strong></p><p>${personal.tempatLahir}, ${new Date(personal.tanggalLahir).toLocaleDateString('id-ID')}</p>
+                            <p><strong>Asal Sekolah:</strong></p><p>${personal.asalSekolah}</p>
+                        </div>
+                    </div>
+
+                    <!-- Pemenang Mata Pelajaran -->
+                    <div class="bg-blue-100 border-l-4 border-blue-500 p-6 rounded-xl mb-8 shadow-lg">
+                        <h3 class="text-2xl font-bold text-blue-800 mb-4">Mata Pelajaran Kunci (Pemenang)</h3>
+                        <p class="text-xl">Nilai Rata-rata Tertinggi: <span class="font-extrabold text-blue-700">${bestSubject.name}</span></p>
+                        <p class="text-4xl font-extrabold text-blue-900 mt-2">${bestSubject.average}</p>
+                        <p class="text-sm text-gray-600 mt-2">Nilai ini menjadi dasar utama penentuan rekomendasi jurusan Anda.</p>
+                    </div>
+
+                    <!-- Rekomendasi Jurusan -->
+                    <div class="mb-8">
+                        <h3 class="text-2xl font-bold text-gray-800 mb-4 border-b pb-2">Rekomendasi Jurusan dan Alasan</h3>
+                        <div class="space-y-4">
+                            ${recomList}
+                        </div>
+                    </div>
+                    
+                    <!-- Rekomendasi Kampus -->
+                    <div class="bg-gray-100 p-6 rounded-xl mb-10 shadow-md">
+                        <h3 class="text-2xl font-bold text-gray-800 mb-4">Rekomendasi Kampus (${recommendation.campus.type})</h3>
+                        <p class="text-gray-700">${recommendation.campus.list}</p>
+                        <p class="text-xs text-gray-500 mt-3">Silakan eksplorasi lebih lanjut daftar kampus ini berdasarkan kriteria dan daya tampung.</p>
+                    </div>
+
+                    <!-- Ringkasan Tabel Rata-rata -->
+                    <h3 class="text-2xl font-bold text-gray-800 mb-4 border-b pb-2">Tabel Ringkasan Rata-rata Nilai</h3>
+                    <div class="score-table-wrapper mb-8">
+                        <table class="w-full bg-white text-sm shadow-md rounded-lg">
+                            <thead>
+                                <tr class="bg-gray-200 text-gray-700">
+                                    <th class="px-4 py-2 text-left rounded-tl-lg">Mata Pelajaran</th>
+                                    <th class="px-4 py-2 text-center rounded-tr-lg">Rata-rata (Smt 1-5)</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${avgTableRows}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+                
+                <!-- Tombol Aksi -->
+                <div class="mt-8 flex justify-between gap-4">
+                    <button id="download-pdf"
+                        class="w-1/2 bg-red-600 hover:bg-red-700 text-white font-bold py-3 px-4 rounded-lg transition duration-200 ease-in-out shadow-lg transform hover:scale-[1.01]">
+                        Download PDF Hasil
+                    </button>
+                    <button id="restart-input"
+                        class="w-1/2 bg-blue-500 hover:bg-blue-600 text-white font-bold py-3 px-4 rounded-lg transition duration-200 ease-in-out shadow-lg transform hover:scale-[1.01]">
+                        Input Ulang / Kembali ke Form Nilai
+                    </button>
+                </div>
+                <div id="pdf-feedback" class="hidden"></div> <!-- Lokasi Feedback PDF -->
+            `;
+            
+            // Event Listeners Halaman 3
+            document.getElementById('download-pdf').addEventListener('click', downloadPDF);
+            document.getElementById('restart-input').addEventListener('click', () => {
+                // Tidak clear data, hanya kembali ke halaman 2 untuk input ulang
+                renderPage2();
+            });
+        }
+
+
+        /**
+         * @description Menggunakan html2canvas dan jspdf untuk membuat PDF (DIPERBAIKI).
+         */
+        function downloadPDF() {
+            const element = document.getElementById('pdf-export-content');
+            // Pastikan jsPDF tersedia
+            if (!window.jspdf || !window.html2canvas) {
+                displayFeedback('Gagal memuat library PDF. Pastikan koneksi internet stabil.', 'pdf-feedback', 'error');
+                return;
+            }
+            const { jsPDF } = window.jspdf;
+
+            // Hapus feedback sebelumnya
+            hideError('pdf-feedback');
+            
+            // Tampilkan pesan loading di tombol
+            const downloadBtn = document.getElementById('download-pdf');
+            const originalText = downloadBtn.textContent;
+            downloadBtn.textContent = 'Membuat PDF... Mohon Tunggu.';
+            downloadBtn.disabled = true;
+            downloadBtn.classList.add('opacity-70');
+
+            // Set window scroll to 0 to prevent cutting off content at the top
+            window.scrollTo(0, 0);
+
+            html2canvas(element, {
+                scale: 2, // Meningkatkan resolusi untuk kualitas cetak yang lebih baik
+                useCORS: true,
+                logging: false,
+                // Penting: Memastikan latar belakang konten putih, bukan transparan
+                backgroundColor: '#ffffff' 
+            }).then(canvas => {
+                const imgData = canvas.toDataURL('image/png');
+                const pdf = new jsPDF('p', 'mm', 'a4');
+                const imgWidth = 210; // Lebar A4 dalam mm
+                const pageHeight = 297; // Tinggi A4 dalam mm
+                const imgHeight = canvas.height * imgWidth / canvas.width;
+                let heightLeft = imgHeight;
+                let position = 0;
+
+                // Tambahkan gambar ke PDF, memecah ke halaman baru jika terlalu panjang
+                pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight);
+                heightLeft -= pageHeight;
+
+                while (heightLeft >= 0) {
+                    position = heightLeft - imgHeight;
+                    pdf.addPage();
+                    pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight);
+                    heightLeft -= pageHeight;
+                }
+                
+                // Judul file PDF
+                const fileName = `Rekomendasi_Jurusan_${userData.personal.firstName.replace(/\s/g, '_')}.pdf`;
+                pdf.save(fileName);
+
+                // Berikan feedback sukses
+                displayFeedback('PDF berhasil dibuat dan diunduh!', 'pdf-feedback', 'success');
+
+                // Kembalikan tombol ke keadaan semula
+                downloadBtn.textContent = originalText;
+                downloadBtn.disabled = false;
+                downloadBtn.classList.remove('opacity-70');
+            }).catch(error => {
+                console.error("Error saat membuat PDF:", error);
+                // Berikan feedback error yang jelas
+                displayFeedback('Gagal membuat PDF. Coba ulangi. Jika masalah berlanjut, mungkin ada batasan keamanan pada browser Anda saat membuka file lokal.', 'pdf-feedback', 'error');
+                
+                // Kembalikan tombol ke keadaan semula
+                downloadBtn.textContent = originalText;
+                downloadBtn.disabled = false;
+                downloadBtn.classList.remove('opacity-70');
+            });
+        }
+
+
+        // **********************************************
+        // INISIALISASI APLIKASI
+        // **********************************************
+
+        function initApp() {
+            userData = loadData();
+            
+            // Tentukan halaman yang akan ditampilkan berdasarkan data yang ada
+            if (userData.personal && userData.results) {
+                renderPage3(); // Langsung ke Hasil jika sudah ada
+            } else if (userData.personal) {
+                renderPage2(); // Lanjut input nilai jika data pribadi sudah ada
+            } else {
+                renderPage1(); // Mulai dari awal
+            }
+        }
+
+        // Jalankan aplikasi setelah DOM dimuat
+        document.addEventListener('DOMContentLoaded', initApp);
+    </script>
+</body>
+</html>
